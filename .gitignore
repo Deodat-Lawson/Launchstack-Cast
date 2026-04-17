@@ -1,0 +1,20 @@
+# Go
+/cast-api
+/cast-worker
+/bin/
+
+# Python
+python/.venv/
+python/__pycache__/
+python/workers/__pycache__/
+python/common/__pycache__/
+*.pyc
+
+# Data
+/data/
+
+# Env
+.env
+
+# OS
+.DS_Store
