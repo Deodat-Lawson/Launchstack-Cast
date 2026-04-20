@@ -11,17 +11,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+
 	"github.com/launchstack/cast/internal/db"
+	"github.com/launchstack/cast/internal/jobs"
 )
 
 type Handlers struct {
 	pool    *pgxpool.Pool
+	river   *river.Client[pgx.Tx]
 	logger  *slog.Logger
 	dataDir string
 }
 
-func NewHandlers(pool *pgxpool.Pool, logger *slog.Logger, dataDir string) *Handlers {
-	return &Handlers{pool: pool, logger: logger, dataDir: dataDir}
+func NewHandlers(pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx], logger *slog.Logger, dataDir string) *Handlers {
+	return &Handlers{pool: pool, river: riverClient, logger: logger, dataDir: dataDir}
 }
 
 // POST /v1/videos
@@ -39,16 +43,41 @@ func (h *Handlers) CreateVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Insert video + enqueue ingest job atomically: either both land or
+	// neither does. A committed videos row without a queued job would be a
+	// ghost that the worker never picks up.
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		h.logger.Error("failed to begin tx", "error", err, "request_id", RequestID(r.Context()))
+		writeError(w, http.StatusInternalServerError, "db_error", "failed to create video")
+		return
+	}
+	defer tx.Rollback(r.Context()) //nolint:errcheck // safe to ignore after commit
+
 	// For v1, source_path is derived from the video ID after creation.
-	// We insert with a placeholder, then update once we know the ID.
-	video, err := db.InsertVideo(r.Context(), h.pool, &req.SourceURL, "pending")
+	// Insert with a placeholder, then set the real path below.
+	video, err := db.InsertVideo(r.Context(), tx, &req.SourceURL, "pending")
 	if err != nil {
 		h.logger.Error("failed to insert video", "error", err, "request_id", RequestID(r.Context()))
 		writeError(w, http.StatusInternalServerError, "db_error", "failed to create video")
 		return
 	}
 
-	// Set source_path to data dir keyed by video ID.
+	if _, err := h.river.InsertTx(r.Context(), tx, jobs.IngestArgs{VideoID: video.ID}, nil); err != nil {
+		h.logger.Error("failed to enqueue ingest job", "error", err, "video_id", video.ID)
+		writeError(w, http.StatusInternalServerError, "queue_error", "failed to enqueue ingest job")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		h.logger.Error("failed to commit", "error", err, "video_id", video.ID)
+		writeError(w, http.StatusInternalServerError, "db_error", "failed to create video")
+		return
+	}
+
+	// Side effects after commit: data dir is keyed by video ID. If mkdir
+	// fails here, the row + job still exist; the ingest worker will fail
+	// loudly, which is the right signal (disk problem).
 	sourcePath := filepath.Join(h.dataDir, video.ID.String())
 	if err := os.MkdirAll(sourcePath, 0o755); err != nil {
 		h.logger.Error("failed to create data dir", "error", err, "video_id", video.ID)

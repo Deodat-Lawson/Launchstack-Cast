@@ -6,6 +6,11 @@ Input:
 
 Output:
   { "embeddings": [[0.01, -0.03, ...], ...] }
+
+Runs as a long-lived daemon by default so the CLIP model is loaded once.
+Pass --once for one-shot CLI execution. Model choice is fixed at init
+(envs CAST_CLIP_MODEL, CAST_CLIP_PRETRAINED); per-request options are
+honored only in one-shot mode.
 """
 
 import sys
@@ -13,10 +18,27 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from common.run import run
+from common.run import run, run_daemon
 
 
-def visual_embed(request):
+def _load_clip(model_name, pretrained):
+    import open_clip
+    import torch  # noqa: F401  (imported so daemon startup surfaces missing deps)
+
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        model_name, pretrained=pretrained
+    )
+    model.eval()
+    return {"model": model, "preprocess": preprocess}
+
+
+def init_clip():
+    model_name = os.environ.get("CAST_CLIP_MODEL", "ViT-B-32")
+    pretrained = os.environ.get("CAST_CLIP_PRETRAINED", "openai")
+    return _load_clip(model_name, pretrained)
+
+
+def visual_embed(request, state=None):
     inputs = request.get("inputs", {})
     image_paths = inputs.get("image_paths", [])
 
@@ -27,17 +49,17 @@ def visual_embed(request):
         if not os.path.isfile(p):
             raise FileNotFoundError(f"image not found: {p}")
 
-    import open_clip
     import torch
     from PIL import Image
 
-    model_name = request.get("options", {}).get("model", "ViT-B-32")
-    pretrained = request.get("options", {}).get("pretrained", "openai")
+    if state is None:
+        # One-shot path.
+        model_name = request.get("options", {}).get("model", "ViT-B-32")
+        pretrained = request.get("options", {}).get("pretrained", "openai")
+        state = _load_clip(model_name, pretrained)
 
-    model, _, preprocess = open_clip.create_model_and_transforms(
-        model_name, pretrained=pretrained
-    )
-    model.eval()
+    model = state["model"]
+    preprocess = state["preprocess"]
 
     images = [preprocess(Image.open(p).convert("RGB")) for p in image_paths]
     batch = torch.stack(images)
@@ -52,4 +74,7 @@ def visual_embed(request):
 
 
 if __name__ == "__main__":
-    run(visual_embed)
+    if "--once" in sys.argv:
+        run(lambda req: visual_embed(req, None))
+    else:
+        run_daemon(visual_embed, init=init_clip)

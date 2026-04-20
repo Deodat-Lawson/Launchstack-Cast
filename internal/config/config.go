@@ -19,6 +19,10 @@ type Config struct {
 	// Data directory for video files and keyframes
 	DataDir string `env:"CAST_DATA_DIR" envDefault:"./data"`
 
+	// Web directory containing the frontend prototype (Cast.html + JSX).
+	// Served at / by the API.
+	WebDir string `env:"CAST_WEB_DIR" envDefault:"./web"`
+
 	// Python
 	PythonBin  string `env:"CAST_PYTHON_BIN" envDefault:"python3"`
 	PythonRoot string `env:"CAST_PYTHON_ROOT" envDefault:"./python"`
@@ -26,9 +30,10 @@ type Config struct {
 	// LLM
 	AnthropicAPIKey string `env:"ANTHROPIC_API_KEY"`
 
-	// Worker
-	WorkerConcurrency  int           `env:"CAST_WORKER_CONCURRENCY" envDefault:"2"`
-	WorkerPollInterval time.Duration `env:"CAST_WORKER_POLL_INTERVAL" envDefault:"2s"`
+	// Worker: max in-flight jobs this process will run. River handles poll
+	// cadence internally via LISTEN/NOTIFY + a sane fallback, so there's no
+	// poll-interval knob here.
+	WorkerConcurrency int `env:"CAST_WORKER_CONCURRENCY" envDefault:"2"`
 
 	// Python worker timeouts
 	TimeoutTranscribe  time.Duration `env:"CAST_PY_TIMEOUT_TRANSCRIBE" envDefault:"300s"`
@@ -63,6 +68,6 @@ func (c *Config) String() string {
 	fmt.Fprintf(&b, "data_dir=%s ", c.DataDir)
 	fmt.Fprintf(&b, "python_bin=%s python_root=%s ", c.PythonBin, c.PythonRoot)
 	fmt.Fprintf(&b, "anthropic_api_key=%s ", redact(c.AnthropicAPIKey))
-	fmt.Fprintf(&b, "worker_concurrency=%d worker_poll=%s", c.WorkerConcurrency, c.WorkerPollInterval)
+	fmt.Fprintf(&b, "worker_concurrency=%d", c.WorkerConcurrency)
 	return b.String()
 }

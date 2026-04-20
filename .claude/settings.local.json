@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(go get *)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/tools/**)",
+      "Read(//c/Users/Timothy Lin/**)",
+      "Bash(/c/Windows/System32/where.exe go.exe)",
+      "mcp__claude_ai_Figma__get_design_context",
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(gunzip -c webfetch-1776574445584-qj5nos.bin)",
+      "Bash(mkdir -p \"/tmp/cast-design\")",
+      "Read(//tmp/**)",
+      "Bash(tar -xzf \"/c/Users/Timothy Lin/.claude/projects/c--Users-Timothy-Lin-Projects-Launchstack-Cast/5ee9be8c-1e08-450e-b2bc-04c1bb7cdf92/tool-results/webfetch-1776574445584-qj5nos.bin\")",
+      "Bash(cygpath -w /tmp/cast-design)",
+      "Bash(cp \"/c/Users/TIMOTH~1/AppData/Local/Temp/cast-design/launchstack-cast/project/Cast.html\" \"/c/Users/Timothy Lin/Projects/Launchstack-Cast/web/Cast.html\")",
+      "Bash(cp \"/c/Users/TIMOTH~1/AppData/Local/Temp/cast-design/launchstack-cast/project/app_simple.jsx\" \"/c/Users/Timothy Lin/Projects/Launchstack-Cast/web/app_simple.jsx\")",
+      "Bash(cp \"/c/Users/TIMOTH~1/AppData/Local/Temp/cast-design/launchstack-cast/project/data.js\" \"/c/Users/Timothy Lin/Projects/Launchstack-Cast/web/data.js\")",
+      "Bash(go build *)"
+    ]
+  }
+}

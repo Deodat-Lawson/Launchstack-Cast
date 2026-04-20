@@ -48,14 +48,19 @@ cd ..
 # 6. Run the API server
 make run-api
 
-# 7. (separate terminal) Submit a video
+# 7. Open the frontend prototype in a browser
+#    http://localhost:8080/
+
+# 8. (separate terminal) Submit a video
 curl -s -X POST http://localhost:8080/v1/videos \
   -H 'Content-Type: application/json' \
   -d '{"source_url": "https://example.com/video.mp4"}' | jq .
 
-# 8. Run tests
+# 9. Run tests
 make test-go
 ```
+
+The API also serves a single-file React prototype of the UI at `/` (redirects to `/Cast.html`). See [web/README.md](web/README.md) for what's there and how it maps to future backend endpoints.
 
 ## Project structure
 

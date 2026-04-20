@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cast — search videos by who and what</title>
+<meta name="viewport" content="width=1280" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --sans: "Inter", -apple-system, system-ui, sans-serif;
+    --serif: "Instrument Serif", Georgia, serif;
+    --bg:     oklch(0.985 0.004 80);
+    --bg-alt: oklch(0.965 0.006 80);
+    --line:   oklch(0.9 0.006 80);
+    --fg:     oklch(0.2 0.01 60);
+    --fg-mut: oklch(0.48 0.01 60);
+    --fg-dim: oklch(0.65 0.01 60);
+    --accent: oklch(0.56 0.16 35);
+    --accent-soft: oklch(0.94 0.04 45);
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(0.85 0.005 60); border-radius: 10px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.75 0.005 60); }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea { font-family: inherit; }
+  h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+  mark { background: var(--accent-soft); color: var(--accent); border-radius: 2px; padding: 0 2px; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="data.js"></script>
+<script type="text/babel" src="app_simple.jsx"></script>
+<script type="text/babel">
+  ReactDOM.createRoot(document.getElementById("root")).render(<CastApp />);
+</script>
+</body>
+</html>

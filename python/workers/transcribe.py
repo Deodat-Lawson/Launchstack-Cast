@@ -6,6 +6,11 @@ Input:
 
 Output:
   { "segments": [{"start": 0.0, "end": 2.5, "text": "Hello world"}], "language": "en" }
+
+Runs as a long-lived daemon by default so the Whisper model is loaded once.
+Pass --once for one-shot CLI-style execution. The model size is fixed at init
+(env CAST_WHISPER_MODEL, default "base"); per-request options.model is honored
+only in one-shot mode.
 """
 
 import sys
@@ -14,10 +19,17 @@ import os
 # Allow importing common module from the python/ root.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from common.run import run
+from common.run import run, run_daemon
 
 
-def transcribe(request):
+def init_whisper():
+    import whisper
+
+    model_name = os.environ.get("CAST_WHISPER_MODEL", "base")
+    return whisper.load_model(model_name)
+
+
+def transcribe(request, model=None):
     inputs = request.get("inputs", {})
     audio_path = inputs.get("audio_path")
     language = inputs.get("language")
@@ -28,10 +40,12 @@ def transcribe(request):
     if not os.path.isfile(audio_path):
         raise FileNotFoundError(f"audio file not found: {audio_path}")
 
-    import whisper
+    if model is None:
+        # One-shot path.
+        import whisper
 
-    model_name = request.get("options", {}).get("model", "base")
-    model = whisper.load_model(model_name)
+        model_name = request.get("options", {}).get("model", "base")
+        model = whisper.load_model(model_name)
 
     decode_opts = {}
     if language:
@@ -55,4 +69,7 @@ def transcribe(request):
 
 
 if __name__ == "__main__":
-    run(transcribe)
+    if "--once" in sys.argv:
+        run(lambda req: transcribe(req, None))
+    else:
+        run_daemon(transcribe, init=init_whisper)
