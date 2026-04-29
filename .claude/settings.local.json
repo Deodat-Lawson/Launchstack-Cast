@@ -20,7 +20,15 @@
       "Bash(go build *)",
       "Bash(xargs wc *)",
       "Bash(git -C \"C:/Users/Timothy Lin/Projects/Launchstack-Cast/\" log --oneline)",
-      "Bash(.venv/bin/python -c \"import torch; print\\('torch:', torch.__version__\\); print\\('cuda available:', torch.cuda.is_available\\(\\)\\); print\\('cuda built:', torch.backends.cuda.is_built\\(\\)\\); print\\('device count:', torch.cuda.device_count\\(\\) if torch.cuda.is_available\\(\\) else 0\\)\")"
+      "Bash(.venv/bin/python -c \"import torch; print\\('torch:', torch.__version__\\); print\\('cuda available:', torch.cuda.is_available\\(\\)\\); print\\('cuda built:', torch.backends.cuda.is_built\\(\\)\\); print\\('device count:', torch.cuda.device_count\\(\\) if torch.cuda.is_available\\(\\) else 0\\)\")",
+      "Bash(.venv/bin/python -c \"from drone_search.llm import GeminiClient, _parse_retry_delay; print\\('ok'\\); print\\(_parse_retry_delay\\({'error': {'details': [{'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '47s'}]}}\\)\\)\")",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(.venv/bin/python -m drone_search ingest --help)",
+      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\('src/drone_search/__main__.py'\\).read\\(\\)\\); print\\('ok'\\)\")",
+      "Bash(.venv/bin/python -c \"from sklearn.cluster import DBSCAN; print\\('ok'\\)\")",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(python -m drone_search ingest --help)",
+      "Bash(uv run *)"
     ]
   }
 }

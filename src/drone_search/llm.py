@@ -14,6 +14,8 @@ import io
 import json
 import logging
 import os
+import random
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,6 +26,27 @@ from drone_search.document import Document, FrameCaption
 log = logging.getLogger(__name__)
 
 _MODEL = os.environ.get("DRONE_SEARCH_GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
+
+# Free-tier flash-lite is 15 RPM; 4s/call leaves a small margin.
+_MIN_INTERVAL_S = float(os.environ.get("DRONE_SEARCH_GEMINI_MIN_INTERVAL_S", "4.0"))
+_MAX_RETRIES = int(os.environ.get("DRONE_SEARCH_GEMINI_MAX_RETRIES", "4"))
+
+
+def _parse_retry_delay(details: Any) -> float | None:
+    """Extract `retryDelay` (seconds) from a Gemini APIError payload, if present."""
+    try:
+        items = details.get("error", {}).get("details", []) if isinstance(details, dict) else []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if "RetryInfo" in str(item.get("@type", "")):
+                raw = str(item.get("retryDelay", "")).strip()
+                if raw.endswith("s"):
+                    raw = raw[:-1]
+                return float(raw) if raw else None
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return None
 
 
 @dataclass(slots=True)
@@ -55,6 +78,13 @@ class GeminiClient:
 
         self._client = genai.Client(api_key=api_key)
         self._model = model
+        self._last_call_t: float = 0.0
+
+    def _throttle(self) -> None:
+        wait = _MIN_INTERVAL_S - (time.monotonic() - self._last_call_t)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call_t = time.monotonic()
 
     @staticmethod
     def is_available() -> bool:
@@ -82,16 +112,40 @@ class GeminiClient:
             config["response_schema"] = json_schema
 
         contents = [_to_part(p) for p in parts]
-        resp = self._client.models.generate_content(
-            model=self._model,
-            contents=contents,
-            config=types.GenerateContentConfig(**config) if config else None,
-        )
-        return resp.text or ""
+        cfg = types.GenerateContentConfig(**config) if config else None
+
+        from google.genai import errors as genai_errors
+
+        retryable = {429, 500, 502, 503, 504}
+        for attempt in range(_MAX_RETRIES + 1):
+            self._throttle()
+            try:
+                resp = self._client.models.generate_content(
+                    model=self._model,
+                    contents=contents,
+                    config=cfg,
+                )
+                return resp.text or ""
+            except genai_errors.APIError as e:
+                code = getattr(e, "code", None)
+                if code not in retryable or attempt == _MAX_RETRIES:
+                    raise
+                delay = _parse_retry_delay(getattr(e, "details", None))
+                # Fall back to exponential backoff with jitter if server didn't say.
+                # 503 (overload) deserves a longer floor than 429 (rate limit).
+                if delay is None or delay <= 0:
+                    base = 5.0 if code == 503 else 2.0
+                    delay = min(60.0, base * (2.0 ** attempt)) + random.uniform(0, 1)
+                log.info(
+                    "Gemini %s; sleeping %.1fs (attempt %d/%d)",
+                    code, delay, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(delay)
+        return ""  # unreachable
 
     # --- A2: per-detection captioning -------------------------------------
 
-    def caption_crops(self, crops: list[Image.Image], *, batch_size: int = 8) -> list[CaptionResult]:
+    def caption_crops(self, crops: list[Image.Image], *, batch_size: int = 16) -> list[CaptionResult]:
         """Return one CaptionResult per crop, in order."""
         if not crops:
             return []

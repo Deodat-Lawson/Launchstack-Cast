@@ -1,7 +1,9 @@
-"""YOLOv8 + ByteTrack person detector + tracker.
+"""YOLOv8 + BoT-SORT person detector + tracker.
 
 Maps to proposal §3 Layer 1 — Ingestion & Detection. Treats the detector as a
-black-box "tokenizer" — the IR substance lives downstream.
+black-box "tokenizer" — the IR substance lives downstream. BoT-SORT is the
+default tracker (better motion modeling for crowded scenes); ByteTrack remains
+selectable via `tracker="bytetrack.yaml"`.
 """
 from __future__ import annotations
 
@@ -73,14 +75,21 @@ def extract_detections(
     conf: float = 0.25,
     max_frames: int | None = None,
     model_name: str = "yolov8x.pt",
-    tracker: str = "bytetrack.yaml",
+    tracker: str = "botsort.yaml",
     device: str | None = None,
+    imgsz: int = 1280,
+    min_bbox_area_frac: float = 0.0,
 ) -> Iterator[tuple[Detection, Image.Image]]:
     """Yield (Detection, crop_image) for each person detection in `video_path`.
 
     Frames are sampled at `fps` (default 1 fps to keep CLIP cost tractable
     later, per proposal §7 risk mitigation). Only person-class detections
     (COCO class 0) are emitted.
+
+    `imgsz` is the YOLO inference resolution. 1280 ≈ 4× compute of 640 but
+    materially better recall on small persons (broadcast wide shots, drone
+    altitude). `min_bbox_area_frac` drops boxes smaller than that fraction
+    of frame area — useful for stadium-crowd suppression in sports footage.
     """
     from ultralytics import YOLO
 
@@ -111,6 +120,7 @@ def extract_detections(
         verbose=False,
         vid_stride=stride,
         device=resolved_device,
+        imgsz=imgsz,
     )
     for stride_idx, r in enumerate(results):
         frame_idx = stride_idx * stride
@@ -123,6 +133,9 @@ def extract_detections(
         if frame_bgr is None:
             continue
 
+        fh, fw = frame_bgr.shape[:2]
+        frame_area = max(1, fh * fw)
+
         boxes = r.boxes
         xyxy = boxes.xyxy.cpu().numpy()
         confs = boxes.conf.cpu().numpy()
@@ -132,6 +145,8 @@ def extract_detections(
             x1, y1, x2, y2 = (int(v) for v in xyxy[i])
             w, h = x2 - x1, y2 - y1
             if w <= 1 or h <= 1:
+                continue
+            if min_bbox_area_frac > 0 and (w * h) / frame_area < min_bbox_area_frac:
                 continue
 
             track_id = int(ids[i]) if ids is not None else -1

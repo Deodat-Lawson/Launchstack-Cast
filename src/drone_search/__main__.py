@@ -40,6 +40,21 @@ def ingest(
         os.environ.get("DRONE_SEARCH_YOLO_MODEL", "yolov8x.pt"),
         help="YOLO weights (yolov8n.pt for CPU deploys, yolov8x.pt for evaluation).",
     ),
+    imgsz: int = typer.Option(
+        int(os.environ.get("DRONE_SEARCH_IMGSZ", "1280")),
+        "--imgsz",
+        help="YOLO inference resolution. 1280 lifts small-person recall (broadcast/drone); 640 is faster.",
+    ),
+    min_bbox_area_frac: float = typer.Option(
+        float(os.environ.get("DRONE_SEARCH_MIN_BBOX_AREA_FRAC", "0.0")),
+        "--min-bbox-area-frac",
+        help="Drop boxes smaller than this fraction of frame area. Try 0.0001 for soccer/stadium crowd suppression.",
+    ),
+    tracker: str = typer.Option(
+        os.environ.get("DRONE_SEARCH_TRACKER", "botsort.yaml"),
+        "--tracker",
+        help="Ultralytics tracker config. botsort.yaml (default) handles crowded scenes better; bytetrack.yaml is faster.",
+    ),
     device: str | None = typer.Option(
         None,
         "--device",
@@ -53,6 +68,23 @@ def ingest(
     max_frame_captions: int = typer.Option(
         int(os.environ.get("DRONE_SEARCH_MAX_FRAME_CAPTIONS", "60")),
         help="Cap on scene captions to control Gemini cost.",
+    ),
+    caption_samples_per_track: int = typer.Option(
+        int(os.environ.get("DRONE_SEARCH_CAPTION_SAMPLES_PER_TRACK", "1")),
+        help="Crops to caption per real track (top-N by det_conf). Higher = richer tags.",
+    ),
+    caption_max_untracked: int = typer.Option(
+        int(os.environ.get("DRONE_SEARCH_CAPTION_MAX_UNTRACKED", "64")),
+        help="Cap on captions for untracked detections (track_id=-1), top-N by confidence.",
+    ),
+    merge_tracks: bool = typer.Option(
+        True,
+        "--merge-tracks/--no-merge-tracks",
+        help="Cluster track centroids (cosine DBSCAN) to link re-entries of the same person.",
+    ),
+    merge_eps: float = typer.Option(
+        float(os.environ.get("DRONE_SEARCH_MERGE_EPS", "0.2")),
+        help="Cosine-distance eps for track merging. Lower = stricter (fewer merges).",
     ),
 ) -> None:
     """Run YOLOv8+ByteTrack on `video`, embed crops with CLIP, write Documents to `out`.
@@ -74,6 +106,8 @@ def ingest(
     for det, crop in extract_detections(
         video, fps=fps, conf=conf, max_frames=max_frames,
         model_name=yolo_model, device=resolved_device,
+        imgsz=imgsz, min_bbox_area_frac=min_bbox_area_frac,
+        tracker=tracker,
     ):
         detections.append(
             docmod.Document(
@@ -92,6 +126,17 @@ def ingest(
         for d, e in zip(detections, embs, strict=True):
             d.embedding = e
 
+    # --- Track merging (re-id same person across fragmented ByteTrack ids) -
+    if merge_tracks and detections:
+        from drone_search.cluster import merge_tracks as _merge_tracks
+        n_groups, n_collapsed = _merge_tracks(detections, eps=merge_eps)
+        if n_collapsed:
+            n_tracks_after = len({d.track_id for d in detections if d.track_id != -1})
+            typer.echo(
+                f"merged {n_collapsed} fragmented track(s) across {n_groups} identity group(s) "
+                f"→ {n_tracks_after} unique tracks (eps={merge_eps})"
+            )
+
     # --- Optional Gemini per-detection captioning -------------------------
     use_gemini = caption and _gemini_available()
     if caption and not use_gemini:
@@ -100,31 +145,49 @@ def ingest(
     if use_gemini and crops:
         from drone_search.llm import GeminiClient
 
-        # Untracked detections (track_id == -1) get a unique key per index so
-        # each is captioned individually — they may be different people that
-        # ByteTrack failed to associate.
-        def _key(i: int, d: docmod.Document) -> int:
-            return d.track_id if d.track_id != -1 else -(i + 1)
-
-        rep_idx_by_key: dict[int, int] = {}
+        # Bucket detections: real tracks keyed by track_id; untracked (-1) lumped
+        # into one bucket since we can't associate them and don't want one
+        # caption per untracked detection blowing up cost.
+        tracked: dict[int, list[int]] = {}
+        untracked: list[int] = []
         for i, d in enumerate(detections):
-            k = _key(i, d)
-            cur = rep_idx_by_key.get(k)
-            if cur is None or detections[cur].det_conf < d.det_conf:
-                rep_idx_by_key[k] = i
+            if d.track_id == -1:
+                untracked.append(i)
+            else:
+                tracked.setdefault(d.track_id, []).append(i)
 
-        rep_indices = list(rep_idx_by_key.values())
+        # Top-N by det_conf per real track.
+        n_per_track = max(1, caption_samples_per_track)
+        rep_indices: list[int] = []
+        for tid, idxs in tracked.items():
+            idxs.sort(key=lambda i: detections[i].det_conf, reverse=True)
+            rep_indices.extend(idxs[:n_per_track])
+
+        # Cap untracked at top-K by confidence.
+        untracked.sort(key=lambda i: detections[i].det_conf, reverse=True)
+        untracked_capped = untracked[:max(0, caption_max_untracked)]
+        rep_indices.extend(untracked_capped)
+
         rep_crops = [crops[i] for i in rep_indices]
         typer.echo(
-            f"captioning {len(rep_crops)} unique tracks with Gemini "
-            f"(deduped from {len(crops)} detections) ..."
+            f"captioning {len(rep_crops)} reps with Gemini "
+            f"({len(tracked)} tracks × ≤{n_per_track} + {len(untracked_capped)}/"
+            f"{len(untracked)} untracked; from {len(crops)} detections) ..."
         )
         client = GeminiClient()
         rep_results = client.caption_crops(rep_crops)
-        cap_by_key = {_key(i, detections[i]): r for i, r in zip(rep_indices, rep_results, strict=True)}
+
+        # Map captions back: each rep captions its own detection, plus broadcasts
+        # to the rest of its track so siblings inherit the description/tags.
+        cap_by_idx: dict[int, "object"] = dict(zip(rep_indices, rep_results, strict=True))
+        cap_by_track: dict[int, "object"] = {}
+        for i, r in cap_by_idx.items():
+            tid = detections[i].track_id
+            if tid != -1 and tid not in cap_by_track:
+                cap_by_track[tid] = r
 
         for i, d in enumerate(detections):
-            r = cap_by_key.get(_key(i, d))
+            r = cap_by_idx.get(i) or (cap_by_track.get(d.track_id) if d.track_id != -1 else None)
             if r is None:
                 continue
             if not d.tags:
