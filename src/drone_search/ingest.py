@@ -25,6 +25,47 @@ class Detection:
 _PERSON_CLASS_ID = 0  # COCO class index for "person"
 
 
+def extract_frames(
+    video_path: str | Path,
+    *,
+    fps: float = 1.0,
+    max_frames: int | None = None,
+) -> Iterator[tuple[int, float, Image.Image]]:
+    """Yield (frame_id, t, full_frame) at the sampled rate.
+
+    Pure cv2 — no YOLO. Used for scene-level captioning where every sampled
+    frame matters, not just frames where a person was detected.
+    """
+    video_path = Path(video_path)
+    if not video_path.exists():
+        raise FileNotFoundError(video_path)
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"could not open video: {video_path}")
+
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    stride = max(1, round(src_fps / fps))
+
+    yielded = 0
+    frame_id = 0
+    try:
+        while True:
+            ok, frame_bgr = cap.read()
+            if not ok:
+                break
+            if frame_id % stride == 0:
+                t = frame_id / src_fps
+                rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                yield frame_id, float(t), Image.fromarray(rgb)
+                yielded += 1
+                if max_frames is not None and yielded >= max_frames:
+                    return
+            frame_id += 1
+    finally:
+        cap.release()
+
+
 def extract_detections(
     video_path: str | Path,
     *,
@@ -33,6 +74,7 @@ def extract_detections(
     max_frames: int | None = None,
     model_name: str = "yolov8x.pt",
     tracker: str = "bytetrack.yaml",
+    device: str | None = None,
 ) -> Iterator[tuple[Detection, Image.Image]]:
     """Yield (Detection, crop_image) for each person detection in `video_path`.
 
@@ -41,6 +83,8 @@ def extract_detections(
     (COCO class 0) are emitted.
     """
     from ultralytics import YOLO
+
+    from drone_search.config import resolve_device
 
     video_path = Path(video_path)
     if not video_path.exists():
@@ -55,6 +99,7 @@ def extract_detections(
     stride = max(1, round(src_fps / fps))
 
     model = YOLO(model_name)
+    resolved_device = resolve_device(device)
 
     yielded = 0
     results = model.track(
@@ -65,6 +110,7 @@ def extract_detections(
         conf=conf,
         verbose=False,
         vid_stride=stride,
+        device=resolved_device,
     )
     for stride_idx, r in enumerate(results):
         frame_idx = stride_idx * stride

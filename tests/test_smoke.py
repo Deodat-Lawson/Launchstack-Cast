@@ -17,6 +17,7 @@ MODULES = [
     "drone_search.agent",
     "drone_search.eval",
     "drone_search.eval.metrics",
+    "drone_search.llm",
 ]
 
 

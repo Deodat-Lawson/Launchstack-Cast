@@ -22,3 +22,17 @@ class Paths:
             features=data_dir / "features",
             splits=data_dir / "splits",
         )
+
+
+def resolve_device(explicit: str | None = None) -> str:
+    """Return a torch device string. Priority: explicit > env > MPS > CUDA > CPU."""
+    choice = (explicit or os.environ.get("DRONE_SEARCH_DEVICE", "")).strip().lower()
+    if choice in {"cpu", "cuda", "mps"}:
+        return choice
+    import torch
+
+    if torch.backends.mps.is_available():
+        return "mps"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"

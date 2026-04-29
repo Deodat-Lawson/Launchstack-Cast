@@ -16,17 +16,15 @@ import numpy as np
 from PIL import Image
 
 
-@lru_cache(maxsize=1)
-def _load(model_name: str = "ViT-B-32", pretrained: str = "openai"):
+@lru_cache(maxsize=2)
+def _load(model_name: str = "ViT-B-32", pretrained: str = "openai", device: str = "cpu"):
     import open_clip
-    import torch
 
     model, _, preprocess = open_clip.create_model_and_transforms(
         model_name, pretrained=pretrained
     )
     tokenizer = open_clip.get_tokenizer(model_name)
     model.eval()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     return model, preprocess, tokenizer, device
 
@@ -37,6 +35,7 @@ def encode_images(
     model_name: str = "ViT-B-32",
     pretrained: str = "openai",
     batch_size: int = 32,
+    device: str | None = None,
 ) -> np.ndarray:
     """L2-normalized image embeddings, shape (N, 512)."""
     if not images:
@@ -44,7 +43,9 @@ def encode_images(
 
     import torch
 
-    model, preprocess, _, device = _load(model_name, pretrained)
+    from drone_search.config import resolve_device
+
+    model, preprocess, _, device = _load(model_name, pretrained, resolve_device(device))
     out = []
     with torch.no_grad():
         for start in range(0, len(images), batch_size):
@@ -61,6 +62,7 @@ def encode_text(
     *,
     model_name: str = "ViT-B-32",
     pretrained: str = "openai",
+    device: str | None = None,
 ) -> np.ndarray:
     """L2-normalized text embeddings, shape (N, 512)."""
     if not texts:
@@ -68,9 +70,17 @@ def encode_text(
 
     import torch
 
-    model, _, tokenizer, device = _load(model_name, pretrained)
+    from drone_search.config import resolve_device
+
+    model, _, tokenizer, device = _load(model_name, pretrained, resolve_device(device))
     tokens = tokenizer(list(texts)).to(device)
     with torch.no_grad():
         feats = model.encode_text(tokens)
         feats = feats / feats.norm(dim=-1, keepdim=True)
     return feats.cpu().numpy().astype(np.float32)
+
+
+def _warmup() -> None:
+    """Force model + tokenizer download. Called at Docker build time."""
+    _load()
+    encode_text(["warmup"])
