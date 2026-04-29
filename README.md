@@ -1,87 +1,44 @@
-# Cast
+# DroneSearch + RescueRank
 
-Cast is a multimodal video retrieval system that combines face-cluster identity resolution with LLM-extracted temporal state graphs. Built for video corpora where *who* matters as much as *what* — narrative film, training videos, recorded meetings, instructional content. Powered by Whisper, InsightFace, OpenCLIP, and Postgres + pgvector.
+A multimodal person retrieval and triage engine over aerial drone video.
+Final project for **JHU EN.601.466/666 — Information Retrieval and Web Agents (Spring 2026)**, Option 9 (IR over a non-text modality).
 
-## Architecture
+DroneSearch treats every detected person in a drone's video stream as a *document* and builds an IR system over that corpus: visual feature extraction (the tokenizer analog), an inverted index over discrete attributes, a dense FAISS index over CLIP embeddings, TF-IDF weighting, hybrid Boolean+ranked retrieval, Rocchio relevance feedback, DBSCAN dedup, and a Bayesian triage classifier. A standing-query watcher (RescueRank) fires alerts when a query target reappears in the stream — the autonomous-decision layer.
 
-Cast ingests video, splits it into scenes, runs ML perception (transcription, visual embedding, face detection), clusters faces into stable entity identities, extracts per-entity temporal state via LLM, and serves hybrid retrieval queries across all of it.
+See [docs/PROPOSAL.md](docs/PROPOSAL.md) for the full proposal and [docs/PLAN.md](docs/PLAN.md) for architecture.
 
-- **Go** — orchestration, identity resolution, graph construction, retrieval API, all business logic
-- **Python** — narrow ML inference workers (Whisper, InsightFace, OpenCLIP), invoked as subprocesses
-- **Postgres 16 + pgvector** — vectors, full-text search, entity/state graph, job queue
+## Quickstart
 
-See [docs/PLAN.md](docs/PLAN.md) for the full design.
-
-## Prerequisites
-
-- Go 1.23+
-- Python 3.11+
-- Docker and Docker Compose
-- ffmpeg
-- [goose](https://github.com/pressly/goose) (migration tool)
-
-For ML workers:
-- [uv](https://github.com/astral-sh/uv) (recommended) or pip
-
-## Getting started
+Requires Python 3.11 and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-# 1. Clone
-git clone https://github.com/launchstack/cast.git
-cd cast
-
-# 2. Copy env and edit as needed
-cp .env.example .env
-
-# 3. Start Postgres
-make db-up
-
-# 4. Run migrations
-make migrate-up
-
-# 5. Install Python dependencies (for ML workers)
-cd python
-uv venv
-uv pip install -e ".[dev]"
-cd ..
-
-# 6. Run the API server
-make run-api
-
-# 7. Open the frontend prototype in a browser
-#    http://localhost:8080/
-
-# 8. (separate terminal) Submit a video
-curl -s -X POST http://localhost:8080/v1/videos \
-  -H 'Content-Type: application/json' \
-  -d '{"source_url": "https://example.com/video.mp4"}' | jq .
-
-# 9. Run tests
-make test-go
+make install                                  # uv venv + uv pip install -e ".[dev]"
+make ingest VIDEO=data/raw/sample.mp4         # YOLOv8 + ByteTrack + CLIP -> Documents parquet
+make app                                      # Streamlit UI
+make test                                     # pytest
 ```
 
-The API also serves a single-file React prototype of the UI at `/` (redirects to `/Cast.html`). See [web/README.md](web/README.md) for what's there and how it maps to future backend endpoints.
+The first `make ingest` will download YOLOv8 weights and CLIP ViT-B/32 weights to your local cache.
 
-## Project structure
+## Layout
 
 ```
-cmd/cast-api/        API server entrypoint
-cmd/cast-worker/     Background job runner
-internal/
-  api/               HTTP handlers + middleware
-  config/            Env-driven configuration
-  db/                Postgres pool + queries
-  ingest/            ffmpeg + scene detection
-  pyworker/          Go ↔ Python subprocess contract
-  perception/        ML worker orchestration
-  identity/          Face-embedding clustering
-  graph/             Entity state extraction + writes
-  llm/               LLM API clients
-  retrieval/         Hybrid search + RRF
-  pipeline/          End-to-end job orchestration
-python/workers/      ML inference scripts
-migrations/          SQL migrations (goose)
+src/drone_search/
+  ingest.py       YOLOv8 + ByteTrack person detection
+  embed.py        CLIP image + text encoder
+  document.py     Per-detection Document record
+  index/          dense (FAISS), inverted (TF-IDF), identity (centroids)
+  retrieve.py     hybrid scoring + Rocchio RF
+  cluster.py      DBSCAN dedup
+  triage.py       Bayesian RescueRank
+  agent.py        standing-query watcher
+  eval/metrics.py P@k, MAP, NDCG, bootstrap CIs
+app/streamlit_app.py
+tests/
+docs/PROPOSAL.md  full course proposal
 ```
+
+Cast (the previous incarnation of this repo, a Go+Postgres video retrieval system) is preserved on the `cast-archive` branch.
 
 ## License
 

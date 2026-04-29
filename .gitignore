@@ -1,20 +1,30 @@
-# Go
-/cast-api
-/cast-worker
-/bin/
-
 # Python
-python/.venv/
-python/__pycache__/
-python/workers/__pycache__/
-python/common/__pycache__/
+__pycache__/
 *.pyc
+*.pyo
+.venv/
+build/
+dist/
+*.egg-info/
 
-# Data
-/data/
+# Project
+data/*
+!data/.gitkeep
+!data/README.md
+*.faiss
+*.parquet
+.streamlit/
 
 # Env
 .env
 
+# Models
+*.pt
+yolov8*.pt
+
 # OS
 .DS_Store
+
+# IDE
+.vscode/
+.idea/

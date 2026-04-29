@@ -1,59 +1,26 @@
-.PHONY: dev run-api run-worker build test test-go test-python lint migrate-up migrate-down migrate-create db-up db-down clean e2e
+.PHONY: install ingest app test lint clean
 
-# --- Config ---
-DATABASE_URL ?= postgres://cast:cast@localhost:5432/cast?sslmode=disable
-CAST_PYTHON_BIN ?= python3
+PYTHON ?= python3.11
+VIDEO  ?=
+OUT    ?= data/features/$(notdir $(basename $(VIDEO))).parquet
 
-# --- Dev ---
-dev: db-up migrate-up run-api
+install:
+	uv venv --python $(PYTHON)
+	uv pip install -e ".[dev]"
 
-db-up:
-	docker compose up -d --wait
+ingest:
+	@if [ -z "$(VIDEO)" ]; then echo "usage: make ingest VIDEO=path/to/clip.mp4"; exit 2; fi
+	python -m drone_search ingest --video $(VIDEO) --out $(OUT)
 
-db-down:
-	docker compose down
+app:
+	streamlit run app/streamlit_app.py
 
-# --- Build ---
-build:
-	go build -o bin/cast-api ./cmd/cast-api
-	go build -o bin/cast-worker ./cmd/cast-worker
-
-run-api:
-	go run ./cmd/cast-api
-
-run-worker:
-	go run ./cmd/cast-worker
-
-# --- Test ---
-test: test-go test-python
-
-test-go:
-	go test ./... -count=1
-
-test-python:
-	cd python && $(CAST_PYTHON_BIN) -m pytest -x
+test:
+	pytest -v
 
 lint:
-	go vet ./...
-	gofmt -l .
+	ruff check src tests app
 
-# --- Migrations (goose) ---
-GOOSE := goose -dir migrations
-
-migrate-up:
-	$(GOOSE) postgres "$(DATABASE_URL)" up
-
-migrate-down:
-	$(GOOSE) postgres "$(DATABASE_URL)" down
-
-migrate-create:
-	@read -p "Migration name: " name; \
-	$(GOOSE) create $$name sql -dir migrations
-
-# --- Cleanup ---
 clean:
-	rm -rf bin/
-
-# --- E2E (requires running services) ---
-e2e:
-	go test ./... -tags=e2e -count=1 -timeout=120s
+	rm -rf .venv build dist *.egg-info
+	find . -name __pycache__ -type d -prune -exec rm -rf {} +
