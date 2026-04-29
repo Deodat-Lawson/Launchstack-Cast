@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -86,7 +87,7 @@ def now_iso() -> str:
 def run_ingest(video_path: Path, out_path: Path, *, caption: bool) -> subprocess.Popen[str]:
     """Spawn the ingest CLI as a subprocess. Caller streams stderr."""
     cmd = [
-        "python",
+        sys.executable,
         "-m",
         "drone_search",
         "ingest",

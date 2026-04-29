@@ -31,7 +31,8 @@ def resolve_device(explicit: str | None = None) -> str:
         return choice
     import torch
 
-    if torch.backends.mps.is_available():
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available() and mps.is_built():
         return "mps"
     if torch.cuda.is_available():
         return "cuda"

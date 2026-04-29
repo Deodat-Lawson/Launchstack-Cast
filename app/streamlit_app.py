@@ -181,33 +181,16 @@ def watch_tab(upload: Upload) -> None:
 
     with col_player:
         seek_to = st.session_state.get("seek_to")
-        if _HAS_PLAYER:
-            url = f"file://{upload.video_path}"
-            player_state = st_player(
-                url,
-                playing=False,
-                progress_interval=300,
-                key=f"player-{upload.sha1}",
-            )
-            if seek_to is not None:
-                # streamlit-player can't seek programmatically without a re-mount;
-                # we expose the chosen timestamp via a slider so the user can sync.
-                st.caption(f"Jump-to received: t = {seek_to:.1f}s — drag the player to that point.")
-            data = getattr(player_state, "data", None) if player_state else None
-            played = data.get("playedSeconds") if isinstance(data, dict) else None
-            current_t = float(played) if played is not None else seek_to or 0.0
-        else:
-            st.video(str(upload.video_path))
-            duration = frames[-1].t if frames else 60.0
-            current_t = st.slider(
-                "Current moment (s)",
-                min_value=0.0,
-                max_value=float(duration),
-                value=float(seek_to or 0.0),
-                step=0.1,
-                key=f"slider-{upload.sha1}",
-            )
-
+        st.video(str(upload.video_path), start_time=int(seek_to) if seek_to else 0)
+        duration = frames[-1].t if frames else 60.0
+        current_t = st.slider(
+            "Current moment (s)",
+            min_value=0.0,
+            max_value=float(duration),
+            value=float(seek_to or 0.0),
+            step=0.1,
+            key=f"slider-{upload.sha1}",
+        )
         st.session_state.current_t = current_t
 
     nearest_frame = _nearest_frame(frames, current_t)

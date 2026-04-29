@@ -17,7 +17,10 @@
       "Bash(cp \"/c/Users/TIMOTH~1/AppData/Local/Temp/cast-design/launchstack-cast/project/Cast.html\" \"/c/Users/Timothy Lin/Projects/Launchstack-Cast/web/Cast.html\")",
       "Bash(cp \"/c/Users/TIMOTH~1/AppData/Local/Temp/cast-design/launchstack-cast/project/app_simple.jsx\" \"/c/Users/Timothy Lin/Projects/Launchstack-Cast/web/app_simple.jsx\")",
       "Bash(cp \"/c/Users/TIMOTH~1/AppData/Local/Temp/cast-design/launchstack-cast/project/data.js\" \"/c/Users/Timothy Lin/Projects/Launchstack-Cast/web/data.js\")",
-      "Bash(go build *)"
+      "Bash(go build *)",
+      "Bash(xargs wc *)",
+      "Bash(git -C \"C:/Users/Timothy Lin/Projects/Launchstack-Cast/\" log --oneline)",
+      "Bash(.venv/bin/python -c \"import torch; print\\('torch:', torch.__version__\\); print\\('cuda available:', torch.cuda.is_available\\(\\)\\); print\\('cuda built:', torch.backends.cuda.is_built\\(\\)\\); print\\('device count:', torch.cuda.device_count\\(\\) if torch.cuda.is_available\\(\\) else 0\\)\")"
     ]
   }
 }
